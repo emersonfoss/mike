@@ -1,0 +1,3155 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "mike",
+    "languages": [
+      "config",
+      "css",
+      "javascript",
+      "json",
+      "markdown",
+      "sql",
+      "toml",
+      "txt",
+      "typescript",
+      "unknown"
+    ],
+    "frameworks": [
+      "Next.js",
+      "React",
+      "Express",
+      "Tailwind CSS",
+      "Supabase"
+    ],
+    "description": "Legal document assistant with a Next.js frontend and an Express backend, using Supabase Auth/Postgres, Cloudflare R2-compatible object storage, and Anthropic/Gemini/OpenAI model providers for document drafting, review, and processing.",
+    "analyzedAt": "2026-06-13T00:10:41.969Z",
+    "gitCommitHash": "d39f5806e5d6786706df21a9689dbd669433e100"
+  },
+  "nodes": [
+    {
+      "id": "domain:identity-and-access",
+      "type": "domain",
+      "name": "Identity & Access Control",
+      "summary": "Handles who the user is and what they may touch: Supabase email/password auth, per-user profiles with monthly message credits, encrypted bring-your-own LLM API keys, and the ownership-plus-email-sharing rules that gate projects, documents, reviews, and workflows.",
+      "tags": [
+        "authentication",
+        "authorization",
+        "user-profiles",
+        "credits",
+        "api-keys"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entities": [
+          "Supabase auth user",
+          "user_profiles",
+          "user_api_keys",
+          "message credits",
+          "shared_with grants"
+        ],
+        "businessRules": [
+          "Every backend request must carry a valid Supabase bearer token; unauthenticated calls are rejected with 401",
+          "Resource access is ownership or email-based shared_with membership, checked server-side per request",
+          "User LLM API keys are stored AES-256-GCM encrypted at rest, with environment-key fallbacks",
+          "Message credits reset on a rolling monthly window and are enforced before any chat turn"
+        ],
+        "crossDomainInteractions": [
+          "requireAuth middleware fronts every feature router",
+          "Credit balance gates assistant and review chat turns",
+          "Configured API keys determine which LLM providers and models are selectable"
+        ]
+      }
+    },
+    {
+      "id": "flow:sign-up-and-sign-in",
+      "type": "flow",
+      "name": "Sign Up & Sign In",
+      "summary": "A lawyer creates an account or signs in with Supabase email/password; the backend bootstraps a profile row and the client tracks the session for every later call.",
+      "tags": [
+        "auth",
+        "onboarding"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Supabase Auth sign-in/sign-up from the /login and /signup pages",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:sign-up-and-sign-in:submit-signup",
+      "type": "step",
+      "name": "Submit signup",
+      "summary": "Create a Supabase account with name and organisation metadata from the signup page, persisting the profile via the API after success.",
+      "tags": [
+        "signup"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/signup/page.tsx"
+    },
+    {
+      "id": "step:sign-up-and-sign-in:sign-in",
+      "type": "step",
+      "name": "Sign in",
+      "summary": "Authenticate via Supabase email/password sign-in on the login page, redirecting already-authenticated users to the home screen.",
+      "tags": [
+        "login"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/login/page.tsx"
+    },
+    {
+      "id": "step:sign-up-and-sign-in:bootstrap-profile-row",
+      "type": "step",
+      "name": "Bootstrap profile row",
+      "summary": "The backend upserts an empty user_profiles row (ensureProfileRow / loadProfile) so later profile reads succeed.",
+      "tags": [
+        "profile"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/user.ts"
+    },
+    {
+      "id": "step:sign-up-and-sign-in:track-session",
+      "type": "step",
+      "name": "Track session",
+      "summary": "AuthContext fetches the session and listens for auth-state changes, exposing isAuthenticated, loading state, and signOut app-wide.",
+      "tags": [
+        "session"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/contexts/AuthContext.tsx"
+    },
+    {
+      "id": "step:sign-up-and-sign-in:load-profile-context",
+      "type": "step",
+      "name": "Load profile context",
+      "summary": "UserProfileContext loads display name, organisation, credit usage, tier, and per-provider API-key state from the backend.",
+      "tags": [
+        "profile",
+        "context"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/contexts/UserProfileContext.tsx"
+    },
+    {
+      "id": "flow:authorize-api-requests",
+      "type": "flow",
+      "name": "Authenticate & Authorize API Requests",
+      "summary": "Every API call is authenticated via Supabase bearer token, then authorized against ownership and email-sharing rules before any resource is returned.",
+      "tags": [
+        "authorization",
+        "middleware",
+        "sharing"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Authorization: Bearer header on every backend API request",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:authorize-api-requests:attach-bearer-token",
+      "type": "step",
+      "name": "Attach bearer token",
+      "summary": "The mikeApi client attaches the Supabase auth token to every request to the Express backend.",
+      "tags": [
+        "client",
+        "token"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/lib/mikeApi.ts"
+    },
+    {
+      "id": "step:authorize-api-requests:validate-token",
+      "type": "step",
+      "name": "Validate token",
+      "summary": "requireAuth verifies the bearer token against Supabase Auth and populates req.userId and req.userEmail, rejecting unauthenticated calls with 401.",
+      "tags": [
+        "middleware"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/middleware/auth.ts"
+    },
+    {
+      "id": "step:authorize-api-requests:check-resource-access",
+      "type": "step",
+      "name": "Check resource access",
+      "summary": "Ownership and shared_with email rules decide the access level for projects, documents, and reviews (checkProjectAccess, ensureDocAccess, ensureReviewAccess).",
+      "tags": [
+        "access-control"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/access.ts"
+    },
+    {
+      "id": "step:authorize-api-requests:filter-accessible-sets",
+      "type": "step",
+      "name": "Filter accessible sets",
+      "summary": "List endpoints narrow result sets to accessible ids (listAccessibleProjectIds, filterAccessibleDocumentIds).",
+      "tags": [
+        "access-control"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/access.ts"
+    },
+    {
+      "id": "step:authorize-api-requests:guard-owner-only-actions",
+      "type": "step",
+      "name": "Guard owner-only actions",
+      "summary": "The frontend mirrors the rules with owner-only guards on shared resources, surfacing an owner-only modal for restricted actions.",
+      "tags": [
+        "ui-guard"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/shared/OwnerOnlyModal.tsx"
+    },
+    {
+      "id": "flow:manage-model-keys-and-settings",
+      "type": "flow",
+      "name": "Manage API Keys & Model Settings",
+      "summary": "Users bring their own Anthropic/Gemini/OpenAI keys, stored encrypted at rest, and pick default models; model availability is gated by which keys are configured.",
+      "tags": [
+        "api-keys",
+        "encryption",
+        "settings"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Account Models page driving the user profile and key endpoints",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:enter-provider-keys",
+      "type": "step",
+      "name": "Enter provider keys",
+      "summary": "The account models page offers per-provider key entry with save/remove and a default tabular-model dropdown gated by key availability.",
+      "tags": [
+        "settings-ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/(pages)/account/models/page.tsx"
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:validate-payload",
+      "type": "step",
+      "name": "Validate payload",
+      "summary": "Profile update fields and provider names are validated, rejecting unknown fields (validateProfilePayload, normalizeApiKeyProvider).",
+      "tags": [
+        "validation"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/user.ts"
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:encrypt-and-store-key",
+      "type": "step",
+      "name": "Encrypt and store key",
+      "summary": "Keys are AES-256-GCM encrypted and upserted — or deleted when empty — into user_api_keys (saveUserApiKey).",
+      "tags": [
+        "encryption"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/userApiKeys.ts"
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:report-key-status",
+      "type": "step",
+      "name": "Report key status",
+      "summary": "Per-provider status of whether a user key or environment fallback exists is returned without exposing values (getUserApiKeyStatus).",
+      "tags": [
+        "status"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/userApiKeys.ts"
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:resolve-effective-models",
+      "type": "step",
+      "name": "Resolve effective models",
+      "summary": "getUserModelSettings resolves validated tabular and title model ids from the profile plus available keys.",
+      "tags": [
+        "model-resolution"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/userSettings.ts"
+    },
+    {
+      "id": "step:manage-model-keys-and-settings:gate-model-picker",
+      "type": "step",
+      "name": "Gate model picker",
+      "summary": "The frontend only offers models whose provider keys are configured (modelAvailability checks).",
+      "tags": [
+        "ui-gating"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/lib/modelAvailability.ts"
+    },
+    {
+      "id": "flow:track-message-credits",
+      "type": "flow",
+      "name": "Enforce Message Credits",
+      "summary": "Usage is metered by monthly message credits that reset on a rolling window, are enforced before each chat turn, and are surfaced in the account UI with a blocking modal when exhausted.",
+      "tags": [
+        "credits",
+        "metering"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Profile load and chat send paths",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:track-message-credits:roll-credit-window",
+      "type": "step",
+      "name": "Roll credit window",
+      "summary": "loadProfile rolls the monthly credit reset window forward when it has expired.",
+      "tags": [
+        "reset"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/user.ts"
+    },
+    {
+      "id": "step:track-message-credits:enforce-before-streaming",
+      "type": "step",
+      "name": "Enforce before streaming",
+      "summary": "The streaming chat endpoint enforces the credit limit before running the LLM tool loop.",
+      "tags": [
+        "enforcement"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/chat.ts"
+    },
+    {
+      "id": "step:track-message-credits:show-usage",
+      "type": "step",
+      "name": "Show usage",
+      "summary": "The account page shows message-credit usage and subscription tier from the profile context.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/(pages)/account/page.tsx"
+    },
+    {
+      "id": "step:track-message-credits:block-when-exhausted",
+      "type": "step",
+      "name": "Block when exhausted",
+      "summary": "A credits-exhausted modal blocks further sends once the allowance runs out.",
+      "tags": [
+        "ui",
+        "blocking"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/modals/credits-exhausted-modal.tsx"
+    },
+    {
+      "id": "domain:matters-and-documents",
+      "type": "domain",
+      "name": "Matters & Document Management",
+      "summary": "The system of record for legal work: projects model a matter with client-matter numbers and collaborator sharing; documents are uploaded, converted to PDF, stored in R2 under immutable versions, organized into folder trees, and served back through signed previews and token-gated downloads.",
+      "tags": [
+        "projects",
+        "documents",
+        "storage",
+        "versioning",
+        "sharing"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "projects",
+          "project_subfolders",
+          "documents",
+          "document_versions",
+          "R2 storage objects",
+          "download tokens"
+        ],
+        "businessRules": [
+          "Document versions are immutable rows pointing at object-storage paths; the active version is referenced per document",
+          "DOCX files are converted to PDF via LibreOffice so every document has a preview artifact",
+          "Storage keys are deterministic per user, document, and version",
+          "Public downloads require an HMAC-signed, expiring token instead of an authenticated session",
+          "Subfolders nest via a self-referencing parent_folder_id; owner-only actions are guarded on shared projects"
+        ],
+        "crossDomainInteractions": [
+          "Chat, drafting, and tabular review read document bytes from stored versions",
+          "Drafting and redlining write their results back as new document versions",
+          "Access to matters and documents is decided by the identity domain sharing rules"
+        ]
+      }
+    },
+    {
+      "id": "flow:create-and-share-matter",
+      "type": "flow",
+      "name": "Create & Share a Matter",
+      "summary": "A lawyer creates a project for a matter with a client-matter number, then shares it with collaborators by email so the sharing rules grant them access.",
+      "tags": [
+        "projects",
+        "sharing"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Projects dashboard create modal driving the projects router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:create-and-share-matter:open-create-modal",
+      "type": "step",
+      "name": "Open create modal",
+      "summary": "ProjectsOverview lists all projects with search and tab filtering and launches the create-project modal.",
+      "tags": [
+        "dashboard"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/projects/ProjectsOverview.tsx"
+    },
+    {
+      "id": "step:create-and-share-matter:submit-new-project",
+      "type": "step",
+      "name": "Submit new project",
+      "summary": "NewProjectModal captures the new matter details for creation.",
+      "tags": [
+        "modal"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/projects/NewProjectModal.tsx"
+    },
+    {
+      "id": "step:create-and-share-matter:persist-project",
+      "type": "step",
+      "name": "Persist project",
+      "summary": "The projects router creates the project row owned by the user, with client-matter number and visibility flag.",
+      "tags": [
+        "crud"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/projects.ts"
+    },
+    {
+      "id": "step:create-and-share-matter:share-by-email",
+      "type": "step",
+      "name": "Share by email",
+      "summary": "PeopleModal lets the owner add or remove collaborators by email with validation and busy states.",
+      "tags": [
+        "sharing"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/shared/PeopleModal.tsx"
+    },
+    {
+      "id": "step:create-and-share-matter:apply-sharing-rules",
+      "type": "step",
+      "name": "Apply sharing rules",
+      "summary": "shared_with membership grants collaborators access through checkProjectAccess on subsequent requests.",
+      "tags": [
+        "access-control"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/access.ts"
+    },
+    {
+      "id": "flow:organize-matter-documents",
+      "type": "flow",
+      "name": "Organize Matter Documents",
+      "summary": "Inside the project workspace, documents are arranged in a hierarchical folder tree with drag-and-drop uploads and moves, batch upload, and zip download of the matter file.",
+      "tags": [
+        "folders",
+        "organization"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Project workspace documents tab",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:organize-matter-documents:browse-folder-tree",
+      "type": "step",
+      "name": "Browse folder tree",
+      "summary": "ProjectPage drives the documents tab: folder tree, drag-and-drop uploads and moves, version history, and zip download.",
+      "tags": [
+        "workspace"
+      ],
+      "complexity": "complex",
+      "filePath": "frontend/src/app/components/projects/ProjectPage.tsx"
+    },
+    {
+      "id": "step:organize-matter-documents:manage-subfolders",
+      "type": "step",
+      "name": "Manage subfolders",
+      "summary": "Subfolders are created and verified against the project (loadProjectFolder), nesting via parent_folder_id.",
+      "tags": [
+        "folders"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/projects.ts"
+    },
+    {
+      "id": "step:organize-matter-documents:batch-upload-documents",
+      "type": "step",
+      "name": "Batch upload documents",
+      "summary": "Batch uploads run each file through the shared conversion-and-store pipeline (handleDocumentUpload).",
+      "tags": [
+        "upload"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/projects.ts"
+    },
+    {
+      "id": "step:organize-matter-documents:move-documents",
+      "type": "step",
+      "name": "Move documents",
+      "summary": "Documents move between folders via the project document-move endpoints.",
+      "tags": [
+        "moves"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/projects.ts"
+    },
+    {
+      "id": "step:organize-matter-documents:pick-documents-anywhere",
+      "type": "step",
+      "name": "Pick documents anywhere",
+      "summary": "FileDirectory and the add-documents modals expose the same matter documents as pickers for chats and reviews across the app.",
+      "tags": [
+        "picker"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/shared/FileDirectory.tsx"
+    },
+    {
+      "id": "flow:ingest-and-process-document",
+      "type": "flow",
+      "name": "Ingest & Process a Document",
+      "summary": "An uploaded file is size-checked, converted from DOCX to PDF when needed, mined for page count and structure, stored in R2 under deterministic keys, and recorded as a document with its first immutable version.",
+      "tags": [
+        "upload",
+        "conversion",
+        "pipeline"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "Multipart upload endpoints on the documents and projects routers",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:ingest-and-process-document:accept-upload",
+      "type": "step",
+      "name": "Accept upload",
+      "summary": "Multer memory storage enforces the maximum upload size and translates errors into friendly JSON 413/400 responses (singleFileUpload).",
+      "tags": [
+        "multer"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/upload.ts"
+    },
+    {
+      "id": "step:ingest-and-process-document:convert-docx-to-pdf",
+      "type": "step",
+      "name": "Convert DOCX to PDF",
+      "summary": "DOCX bytes convert to PDF via LibreOffice after normalizing backslash zip entry names (docxToPdf, normalizeDocxZipPaths).",
+      "tags": [
+        "libreoffice"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/convert.ts"
+    },
+    {
+      "id": "step:ingest-and-process-document:extract-structure",
+      "type": "step",
+      "name": "Extract structure",
+      "summary": "Page count and a heading/outline structure tree are extracted from PDF outlines or DOCX text for the document sidebar (countPdfPages, extractStructureTree).",
+      "tags": [
+        "extraction"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/documents.ts"
+    },
+    {
+      "id": "step:ingest-and-process-document:store-in-r2",
+      "type": "step",
+      "name": "Store in R2",
+      "summary": "Original bytes and the converted PDF land in the R2 bucket under deterministic storage keys (uploadFile, storageKey, pdfStorageKey).",
+      "tags": [
+        "storage"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/storage.ts"
+    },
+    {
+      "id": "step:ingest-and-process-document:record-document-rows",
+      "type": "step",
+      "name": "Record document rows",
+      "summary": "handleDocumentUpload records the document metadata plus an immutable version row pointing at the storage paths.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/documents.ts"
+    },
+    {
+      "id": "step:ingest-and-process-document:track-processing-status",
+      "type": "step",
+      "name": "Track processing status",
+      "summary": "The documents table tracks filename, file type, size, page count, parsed structure tree, processing status, and folder placement.",
+      "tags": [
+        "schema"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "flow:manage-document-versions",
+      "type": "flow",
+      "name": "Manage Document Versions",
+      "summary": "Each document carries an immutable version history: users list versions, upload new ones, restore older ones, and see change badges driven by the latest assistant-edit version numbers.",
+      "tags": [
+        "versioning",
+        "history"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Version endpoints on the documents router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:manage-document-versions:list-version-history",
+      "type": "step",
+      "name": "List version history",
+      "summary": "useDocumentVersions fetches a document’s version history and current version id with bearer auth and a refresh trigger.",
+      "tags": [
+        "hook"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/hooks/useDocumentVersions.ts"
+    },
+    {
+      "id": "step:manage-document-versions:upload-new-version",
+      "type": "step",
+      "name": "Upload new version",
+      "summary": "UploadNewVersionModal prefetches the current display name, stages a picked file, and submits the name plus file.",
+      "tags": [
+        "modal"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/shared/UploadNewVersionModal.tsx"
+    },
+    {
+      "id": "step:manage-document-versions:restore-prior-version",
+      "type": "step",
+      "name": "Restore prior version",
+      "summary": "The documents router supports version listing, upload, and restore of an earlier version.",
+      "tags": [
+        "restore"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/documents.ts"
+    },
+    {
+      "id": "step:manage-document-versions:resolve-active-version",
+      "type": "step",
+      "name": "Resolve active version",
+      "summary": "loadActiveVersion and attachActiveVersionPaths resolve the current version row and batch-attach storage and PDF paths onto document lists.",
+      "tags": [
+        "resolution"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/documentVersions.ts"
+    },
+    {
+      "id": "step:manage-document-versions:badge-latest-edits",
+      "type": "step",
+      "name": "Badge latest edits",
+      "summary": "attachLatestVersionNumbers attaches the highest assistant_edit version number per document for change-badge display.",
+      "tags": [
+        "badges"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/documentVersions.ts"
+    },
+    {
+      "id": "flow:preview-and-download-document",
+      "type": "flow",
+      "name": "Preview & Download Securely",
+      "summary": "In-app previews use presigned R2 URLs rendered by a pdfjs viewer, while file downloads go through HMAC-signed expiring tokens verified by a public endpoint that streams bytes with sanitized headers.",
+      "tags": [
+        "preview",
+        "download",
+        "security"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Signed preview URLs and the public /download endpoint",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:preview-and-download-document:issue-signed-preview",
+      "type": "step",
+      "name": "Issue signed preview",
+      "summary": "Presigned R2 GET URLs serve in-app previews, optionally forcing a download filename via response-content-disposition (getSignedUrl).",
+      "tags": [
+        "signed-url"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/storage.ts"
+    },
+    {
+      "id": "step:preview-and-download-document:render-pdf-preview",
+      "type": "step",
+      "name": "Render PDF preview",
+      "summary": "DocView renders PDF pages to canvases with text layers, wheel/pinch zoom, and current-page tracking.",
+      "tags": [
+        "viewer"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/shared/DocView.tsx"
+    },
+    {
+      "id": "step:preview-and-download-document:sign-download-token",
+      "type": "step",
+      "name": "Sign download token",
+      "summary": "signDownload creates an HMAC-SHA256 token embedding storage path, filename, and expiry; buildDownloadUrl wraps it into a /download URL.",
+      "tags": [
+        "hmac"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/downloadTokens.ts"
+    },
+    {
+      "id": "step:preview-and-download-document:verify-token-publicly",
+      "type": "step",
+      "name": "Verify token publicly",
+      "summary": "The public downloads endpoint verifies the token signature (timing-safe) and expiry without requiring a session (verifyDownload).",
+      "tags": [
+        "verification"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/downloads.ts"
+    },
+    {
+      "id": "step:preview-and-download-document:stream-with-safe-headers",
+      "type": "step",
+      "name": "Stream with safe headers",
+      "summary": "Stored bytes stream back with a sanitized Content-Disposition header carrying quoted and RFC 5987 filenames (buildContentDisposition).",
+      "tags": [
+        "headers"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/storage.ts"
+    },
+    {
+      "id": "domain:assistant-chat",
+      "type": "domain",
+      "name": "Agentic Assistant Chat",
+      "summary": "The flagship feature: a streaming, tool-using LLM conversation over the user’s legal documents. The engine builds document context, runs a multi-turn tool loop against the selected provider, streams deltas and tool events over SSE, and persists transcripts with citation annotations.",
+      "tags": [
+        "chat",
+        "agent",
+        "llm",
+        "streaming",
+        "citations"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "chats",
+          "chat_messages",
+          "doc store (DOC:N labels)",
+          "tool events",
+          "citations",
+          "LLM provider adapters"
+        ],
+        "businessRules": [
+          "Message credits are enforced before any streaming turn",
+          "Citations arrive in a trailing <CITATIONS> block that is buffered out of the visible output",
+          "Prior document-read tool events are replayed into context so the model retains earlier reads",
+          "Tool use is restricted to the defined schemas (TOOLS plus project, tabular, and workflow extras)",
+          "Only catalog-approved models whose provider key is configured can be used"
+        ],
+        "crossDomainInteractions": [
+          "Reads document bytes and versions from the matters domain",
+          "Invokes drafting and redlining via the generate_document and edit_document tools",
+          "Runs workflow prompts loaded from the workflow library",
+          "Lends its LLM and citation machinery to tabular review chat"
+        ]
+      }
+    },
+    {
+      "id": "flow:stream-assistant-turn",
+      "type": "flow",
+      "name": "Stream an Assistant Turn",
+      "summary": "From the chat input to the persisted transcript: the request is validated, credits enforced, document context built, the multi-turn LLM tool loop streamed over SSE, and the result stored with annotations.",
+      "tags": [
+        "streaming",
+        "sse",
+        "tool-loop"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "Streaming chat endpoint (SSE) on the chat router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:stream-assistant-turn:compose-message",
+      "type": "step",
+      "name": "Compose message",
+      "summary": "ChatInput supplies the message with attachments, workflow selection, and the model toggle.",
+      "tags": [
+        "input"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/ChatInput.tsx"
+    },
+    {
+      "id": "step:stream-assistant-turn:validate-request",
+      "type": "step",
+      "name": "Validate request",
+      "summary": "parseChatMessages validates and normalizes the payload including attached file descriptors, and chat access is verified (getAccessibleChat).",
+      "tags": [
+        "validation"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/chat.ts"
+    },
+    {
+      "id": "step:stream-assistant-turn:enforce-credits-and-models",
+      "type": "step",
+      "name": "Enforce credits and models",
+      "summary": "Credits are enforced and the user’s effective model and API keys are resolved before streaming begins.",
+      "tags": [
+        "credits",
+        "models"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/chat.ts"
+    },
+    {
+      "id": "step:stream-assistant-turn:build-document-context",
+      "type": "step",
+      "name": "Build document context",
+      "summary": "buildDocContext builds the DOC:N doc store from history and current attachments; enrichWithPriorEvents replays earlier doc reads; buildMessages converts the transcript to LLM messages.",
+      "tags": [
+        "context"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:stream-assistant-turn:run-tool-loop",
+      "type": "step",
+      "name": "Run tool loop",
+      "summary": "runLLMStream drives the multi-turn streaming tool loop against the selected provider, emitting deltas, tool events, and final annotations.",
+      "tags": [
+        "orchestration"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:stream-assistant-turn:drip-render-stream",
+      "type": "step",
+      "name": "Drip-render stream",
+      "summary": "useAssistantChat consumes the SSE stream, drip-feeding content for smooth typing while tracking citations and tool events, with cancellation support.",
+      "tags": [
+        "frontend",
+        "sse"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/hooks/useAssistantChat.ts"
+    },
+    {
+      "id": "step:stream-assistant-turn:persist-transcript",
+      "type": "step",
+      "name": "Persist transcript",
+      "summary": "Messages persist to chat_messages with citation annotations; hydrateEditStatuses later refreshes edit annotation statuses and version numbers.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/chat.ts"
+    },
+    {
+      "id": "flow:execute-document-tools",
+      "type": "flow",
+      "name": "Execute Document Tools",
+      "summary": "The model works on real documents through a fixed toolset: reading cached document text, searching for quotes, and invoking project, tabular, and workflow extras, with progress streamed to the client.",
+      "tags": [
+        "tools",
+        "agent"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "LLM tool_use events emitted during a chat turn",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:execute-document-tools:dispatch-tool-call",
+      "type": "step",
+      "name": "Dispatch tool call",
+      "summary": "runToolCalls is the dispatch hub executing every chat tool call and streaming progress events to the client.",
+      "tags": [
+        "dispatch"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:execute-document-tools:resolve-doc-labels",
+      "type": "step",
+      "name": "Resolve doc labels",
+      "summary": "Raw model-provided doc ids resolve to canonical DOC:N labels and document UUIDs (resolveDoc, resolveDocLabel).",
+      "tags": [
+        "resolution"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:execute-document-tools:read-document",
+      "type": "step",
+      "name": "Read document",
+      "summary": "readDocumentContent loads and caches a document’s text, sniffing PDF/DOCX/binary content and emitting doc-read progress; extractPdfText adds [Page N] markers.",
+      "tags": [
+        "read-tool"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:execute-document-tools:find-in-document",
+      "type": "step",
+      "name": "Find in document",
+      "summary": "findInDocumentContent searches whitespace-normalized text for a quote and streams back match contexts with page hints (normalizeWithMap).",
+      "tags": [
+        "search-tool"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:execute-document-tools:run-feature-extras",
+      "type": "step",
+      "name": "Run feature extras",
+      "summary": "Project, tabular, and workflow extra tools execute when their schemas are enabled (PROJECT_EXTRA_TOOLS, TABULAR_TOOLS, WORKFLOW_TOOLS).",
+      "tags": [
+        "extras"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:execute-document-tools:return-results-to-model",
+      "type": "step",
+      "name": "Return results to model",
+      "summary": "Tool results feed back into the streaming loop for the next model turn until the answer completes.",
+      "tags": [
+        "loop"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "flow:project-scoped-chat",
+      "type": "flow",
+      "name": "Chat Across a Whole Matter",
+      "summary": "Project chat puts every ready document of a matter into context: access is validated, the project-wide doc store built with subfolder paths, and the tool loop streamed with project chat persistence.",
+      "tags": [
+        "project-chat",
+        "context"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Project-scoped streaming chat endpoint",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:project-scoped-chat:open-project-chat",
+      "type": "step",
+      "name": "Open project chat",
+      "summary": "The project workspace assistant tab hosts conversations scoped to the matter.",
+      "tags": [
+        "workspace"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/projects/ProjectAssistantTab.tsx"
+    },
+    {
+      "id": "step:project-scoped-chat:validate-project-access",
+      "type": "step",
+      "name": "Validate project access",
+      "summary": "The project chat endpoint validates project access before building context or streaming.",
+      "tags": [
+        "access"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/projectChat.ts"
+    },
+    {
+      "id": "step:project-scoped-chat:build-project-context",
+      "type": "step",
+      "name": "Build project context",
+      "summary": "buildProjectDocContext loads every ready document in the project into the doc store, resolving subfolder paths.",
+      "tags": [
+        "context"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:project-scoped-chat:stream-with-project-tools",
+      "type": "step",
+      "name": "Stream with project tools",
+      "summary": "The LLM tool loop streams with the project extras enabled for matter-wide work.",
+      "tags": [
+        "streaming"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/projectChat.ts"
+    },
+    {
+      "id": "step:project-scoped-chat:persist-project-chat",
+      "type": "step",
+      "name": "Persist project chat",
+      "summary": "Chat history persists scoped to the project for the workspace’s chats tab.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/projectChat.ts"
+    },
+    {
+      "id": "flow:route-model-to-provider",
+      "type": "flow",
+      "name": "Route a Model to Its Provider",
+      "summary": "A classic adapter pattern hides three vendors behind one contract: the model id resolves against a tiered catalog, dispatches to the Claude, Gemini, or OpenAI adapter, and tool schemas convert to each provider’s native shape.",
+      "tags": [
+        "llm",
+        "adapters",
+        "multi-provider"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "streamChatWithTools and completeText calls from chat and review features",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:route-model-to-provider:pick-model",
+      "type": "step",
+      "name": "Pick model",
+      "summary": "The model toggle in the chat input offers models allowed by provider-key availability.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/ModelToggle.tsx"
+    },
+    {
+      "id": "step:route-model-to-provider:resolve-catalog-entry",
+      "type": "step",
+      "name": "Resolve catalog entry",
+      "summary": "The model catalog validates allowed Claude, Gemini, and OpenAI ids per capability tier and resolves the provider and defaults.",
+      "tags": [
+        "catalog"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/llm/models.ts"
+    },
+    {
+      "id": "step:route-model-to-provider:dispatch-to-adapter",
+      "type": "step",
+      "name": "Dispatch to adapter",
+      "summary": "The provider router facade dispatches streamChatWithTools and completeText to the matching adapter based on the model id.",
+      "tags": [
+        "routing"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/llm/index.ts"
+    },
+    {
+      "id": "step:route-model-to-provider:convert-tool-schemas",
+      "type": "step",
+      "name": "Convert tool schemas",
+      "summary": "Provider-neutral tool definitions convert into native Claude and Gemini schemas, stripping JSON Schema fields Gemini rejects.",
+      "tags": [
+        "schemas"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/llm/tools.ts"
+    },
+    {
+      "id": "step:route-model-to-provider:drive-provider-stream",
+      "type": "step",
+      "name": "Drive provider stream",
+      "summary": "Each adapter drives its provider’s streaming loop with reasoning and content callbacks — Claude SDK, Gemini function-calling parts, or OpenAI Responses SSE.",
+      "tags": [
+        "streaming"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/llm/claude.ts"
+    },
+    {
+      "id": "flow:ground-answers-in-citations",
+      "type": "flow",
+      "name": "Ground Answers in Citations",
+      "summary": "Answers stay verifiable: the citation block is buffered out of the visible stream, parsed and normalized into annotations, rendered in a citation side panel, and clicking a citation highlights the exact quote in the source document.",
+      "tags": [
+        "citations",
+        "provenance"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Trailing <CITATIONS> block in model output",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:ground-answers-in-citations:buffer-citation-block",
+      "type": "step",
+      "name": "Buffer citation block",
+      "summary": "runLLMStream buffers the citation block out of the visible streamed output.",
+      "tags": [
+        "buffering"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:ground-answers-in-citations:parse-citations",
+      "type": "step",
+      "name": "Parse citations",
+      "summary": "parseCitations extracts the trailing <CITATIONS> JSON; normalizeCitation coerces marker/ref/page/quote variants into the canonical shape.",
+      "tags": [
+        "parsing"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:ground-answers-in-citations:persist-annotations",
+      "type": "step",
+      "name": "Persist annotations",
+      "summary": "extractAnnotations converts parsed citations and document-edit events into message annotation records stored with the transcript.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:ground-answers-in-citations:show-citation-panel",
+      "type": "step",
+      "name": "Show citation panel",
+      "summary": "ChatView renders the message list and manages side-panel tabs for citations, documents, and edits.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/assistant/ChatView.tsx"
+    },
+    {
+      "id": "step:ground-answers-in-citations:jump-to-source",
+      "type": "step",
+      "name": "Jump to source",
+      "summary": "Citation quotes highlight in the rendered document with scroll-to-match (DocView highlights via highlightQuote/highlightDocxQuote).",
+      "tags": [
+        "highlighting"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/shared/highlightQuote.ts"
+    },
+    {
+      "id": "domain:drafting-and-redlining",
+      "type": "domain",
+      "name": "Document Drafting & Redlining",
+      "summary": "Turns the assistant into a drafting colleague: it generates styled legal DOCX documents from scratch and proposes edits to existing documents as genuine Word tracked changes (w:ins/w:del), which the lawyer accepts or rejects with full version history.",
+      "tags": [
+        "docx",
+        "tracked-changes",
+        "drafting",
+        "redlining",
+        "ooxml"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "generated DOCX drafts",
+          "document_edits",
+          "assistant_edit versions",
+          "tracked changes (w:ins/w:del)"
+        ],
+        "businessRules": [
+          "Edits are applied as Word tracked changes, never silent rewrites",
+          "Each edit must anchor to a unique occurrence in normalized paragraph text, using before/after context to disambiguate",
+          "New tracked-change ids continue from the highest existing id in the document",
+          "Accepting or rejecting a change re-serializes the DOCX and refreshes the PDF preview",
+          "Every proposed edit is recorded in document_edits with accept/reject status"
+        ],
+        "crossDomainInteractions": [
+          "Triggered from assistant chat via the generate_document and edit_document tools",
+          "Generated drafts and edit results are stored as new document versions in the matters domain"
+        ]
+      }
+    },
+    {
+      "id": "flow:generate-legal-document",
+      "type": "flow",
+      "name": "Generate a Legal Document",
+      "summary": "The model drafts a complete legal document: structured sections become a styled DOCX with legal numbering and signature blocks, uploaded to storage and recorded as a first-class document.",
+      "tags": [
+        "generation",
+        "drafting"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "generate_document tool call in a chat turn",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:generate-legal-document:invoke-generate-tool",
+      "type": "step",
+      "name": "Invoke generate tool",
+      "summary": "The model calls the generate_document tool with structured sections drawn from the conversation.",
+      "tags": [
+        "tool-call"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:generate-legal-document:build-styled-docx",
+      "type": "step",
+      "name": "Build styled DOCX",
+      "summary": "generateDocx renders headings, legal numbering, tables, and signature blocks into a styled legal DOCX.",
+      "tags": [
+        "docx"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:generate-legal-document:upload-generated-file",
+      "type": "step",
+      "name": "Upload generated file",
+      "summary": "The file uploads to object storage under the assistant-generated document key (generatedDocKey).",
+      "tags": [
+        "storage"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/storage.ts"
+    },
+    {
+      "id": "step:generate-legal-document:record-document-and-version",
+      "type": "step",
+      "name": "Record document and version",
+      "summary": "Document and version rows are recorded so the draft behaves like any uploaded document.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:generate-legal-document:preview-in-chat",
+      "type": "step",
+      "name": "Preview in chat",
+      "summary": "The new draft surfaces through the chat’s document side panel for immediate preview.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/ChatView.tsx"
+    },
+    {
+      "id": "flow:propose-tracked-edits",
+      "type": "flow",
+      "name": "Propose Tracked Edits",
+      "summary": "The assistant redlines a document like a colleague using Track Changes: find/replace edits are anchored in normalized paragraph text, rewritten as w:ins/w:del runs preserving formatting, and saved as a new assistant_edit version.",
+      "tags": [
+        "redlining",
+        "tracked-changes"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "edit_document tool call in a chat turn",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:propose-tracked-edits:invoke-edit-tool",
+      "type": "step",
+      "name": "Invoke edit tool",
+      "summary": "The model calls the edit_document tool with find/replace edits and surrounding context.",
+      "tags": [
+        "tool-call"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:propose-tracked-edits:load-current-bytes",
+      "type": "step",
+      "name": "Load current bytes",
+      "summary": "loadCurrentVersionBytes downloads the document’s active version from object storage.",
+      "tags": [
+        "load"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:propose-tracked-edits:anchor-each-edit",
+      "type": "step",
+      "name": "Anchor each edit",
+      "summary": "findUniqueAnchor locates a unique occurrence in whitespace- and punctuation-normalized paragraph text, mapped back to original offsets (normalizeWs, mapNormRangeToOriginal).",
+      "tags": [
+        "anchoring"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/docxTrackedChanges.ts"
+    },
+    {
+      "id": "step:propose-tracked-edits:rewrite-runs-as-tracked-changes",
+      "type": "step",
+      "name": "Rewrite runs as tracked changes",
+      "summary": "applyTrackedEdits and reconstructParagraph emit normal, w:del, and w:ins runs preserving run formatting, with fresh tracked ids continuing from maxTrackedId.",
+      "tags": [
+        "ooxml"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/docxTrackedChanges.ts"
+    },
+    {
+      "id": "step:propose-tracked-edits:save-edit-version",
+      "type": "step",
+      "name": "Save edit version",
+      "summary": "runEditDocument stores the result as a new assistant_edit version and records document_edits rows with per-edit errors handled.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:propose-tracked-edits:show-edit-cards",
+      "type": "step",
+      "name": "Show edit cards",
+      "summary": "Per-change metadata streams back as edit events rendered as accept/reject cards in the conversation.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/EditCard.tsx"
+    },
+    {
+      "id": "flow:resolve-tracked-edits",
+      "type": "flow",
+      "name": "Accept or Reject Edits",
+      "summary": "The lawyer disposes of each proposed change: the UI updates optimistically, the OOXML engine accepts or rejects the w:ins/w:del elements, a refreshed version and PDF are uploaded, and statuses sync back into the chat.",
+      "tags": [
+        "review",
+        "resolution"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "Edit accept/reject endpoint on the documents router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:resolve-tracked-edits:choose-accept-or-reject",
+      "type": "step",
+      "name": "Choose accept or reject",
+      "summary": "EditCard presents each AI-proposed change with accept and reject actions.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/EditCard.tsx"
+    },
+    {
+      "id": "step:resolve-tracked-edits:optimistic-dom-update",
+      "type": "step",
+      "name": "Optimistic DOM update",
+      "summary": "applyOptimisticResolution optimistically hides or keeps tracked-change DOM nodes in the rendered DOCX before the backend confirms.",
+      "tags": [
+        "optimistic-ui"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/assistant/EditCard.tsx"
+    },
+    {
+      "id": "step:resolve-tracked-edits:resolve-in-ooxml",
+      "type": "step",
+      "name": "Resolve in OOXML",
+      "summary": "resolveTrackedChange walks the XML tree accepting or rejecting w:ins/w:del elements for the target ids and re-serializes the DOCX zip (resolveInTree).",
+      "tags": [
+        "ooxml"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/lib/docxTrackedChanges.ts"
+    },
+    {
+      "id": "step:resolve-tracked-edits:refresh-version-and-pdf",
+      "type": "step",
+      "name": "Refresh version and PDF",
+      "summary": "handleEditResolution rewrites the DOCX, uploading a refreshed version and converted PDF.",
+      "tags": [
+        "storage"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/documents.ts"
+    },
+    {
+      "id": "step:resolve-tracked-edits:update-edit-status",
+      "type": "step",
+      "name": "Update edit status",
+      "summary": "document_edits status rows update to reflect the accept/reject outcome.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/documents.ts"
+    },
+    {
+      "id": "step:resolve-tracked-edits:sync-chat-annotations",
+      "type": "step",
+      "name": "Sync chat annotations",
+      "summary": "hydrateEditStatuses refreshes document-edit annotation statuses and version numbers in stored chat messages.",
+      "tags": [
+        "sync"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/chat.ts"
+    },
+    {
+      "id": "domain:tabular-review",
+      "type": "domain",
+      "name": "Tabular Multi-Document Review",
+      "summary": "Spreadsheet-style diligence across many documents at once: each row is a document and each column an extraction question; LLM-generated cells stream into the grid with citations, a citation-aware chat sits over the same review, and results export to Excel.",
+      "tags": [
+        "tabular-review",
+        "extraction",
+        "diligence",
+        "spreadsheet",
+        "citations"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "tabular_reviews",
+          "tabular_cells",
+          "tabular_review_chats",
+          "review columns",
+          "review documents"
+        ],
+        "businessRules": [
+          "Each cell carries citations and a generation status, keyed by document and column index",
+          "Cell content parses as a JSON verdict (summary/value/status), tolerating legacy string formats",
+          "Review access is via ownership, the review share list, or the parent project’s rules",
+          "Reviews persist column configuration, selected document ids, and an optional source workflow"
+        ],
+        "crossDomainInteractions": [
+          "Pulls documents and stored text from the matters domain",
+          "Reuses the multi-provider LLM layer and citation machinery from assistant chat",
+          "Can be seeded from a tabular workflow template"
+        ]
+      }
+    },
+    {
+      "id": "flow:create-tabular-review",
+      "type": "flow",
+      "name": "Create a Tabular Review",
+      "summary": "A reviewer assembles a review from a title, optional project and workflow template, a set of documents, and a column configuration, then lands in the streaming grid.",
+      "tags": [
+        "setup",
+        "configuration"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "New tabular review modal driving the tabular router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:create-tabular-review:configure-review",
+      "type": "step",
+      "name": "Configure review",
+      "summary": "AddNewTRModal walks through title input plus optional project and workflow-template dropdowns.",
+      "tags": [
+        "modal"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/tabular/AddNewTRModal.tsx"
+    },
+    {
+      "id": "step:create-tabular-review:select-documents",
+      "type": "step",
+      "name": "Select documents",
+      "summary": "Documents are multi-selected via FileDirectory or uploaded standalone or into the project.",
+      "tags": [
+        "documents"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/AddNewTRModal.tsx"
+    },
+    {
+      "id": "step:create-tabular-review:define-columns",
+      "type": "step",
+      "name": "Define columns",
+      "summary": "Columns come from presets, a workflow template, or the add-column modal.",
+      "tags": [
+        "columns"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/AddColumnModal.tsx"
+    },
+    {
+      "id": "step:create-tabular-review:persist-review",
+      "type": "step",
+      "name": "Persist review",
+      "summary": "The tabular_reviews row stores column configuration, selected document ids, source workflow, practice area, and a shared_with list.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "step:create-tabular-review:open-review-grid",
+      "type": "step",
+      "name": "Open review grid",
+      "summary": "TabularReviewView orchestrates documents, columns, and cells with side panels and drag-drop document management.",
+      "tags": [
+        "grid"
+      ],
+      "complexity": "complex",
+      "filePath": "frontend/src/app/components/tabular/TabularReviewView.tsx"
+    },
+    {
+      "id": "flow:generate-review-cells",
+      "type": "flow",
+      "name": "Generate Review Cells",
+      "summary": "Document text is extracted as markdown, then answered column-by-column — one cell at a time or a whole row in a single streaming call — with results streamed into the grid and persisted with citations.",
+      "tags": [
+        "extraction",
+        "streaming"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "Cell and row generation endpoints on the tabular router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:generate-review-cells:extract-document-text",
+      "type": "step",
+      "name": "Extract document text",
+      "summary": "Page-delimited markdown-ish text extracts from PDFs via pdfjs and from DOCX via mammoth (extractPdfMarkdown, extractDocxMarkdown).",
+      "tags": [
+        "text-extraction"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:generate-review-cells:query-single-cell",
+      "type": "step",
+      "name": "Query single cell",
+      "summary": "queryTabularCell runs one column prompt against one document’s text via completeText and parses the JSON cell verdict.",
+      "tags": [
+        "llm"
+      ],
+      "complexity": "moderate",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:generate-review-cells:stream-whole-row",
+      "type": "step",
+      "name": "Stream whole row",
+      "summary": "queryTabularAllColumns streams one LLM call answering every column for a document, parsing line-delimited JSON cell results as they arrive.",
+      "tags": [
+        "llm",
+        "streaming"
+      ],
+      "complexity": "complex",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:generate-review-cells:stream-into-grid",
+      "type": "step",
+      "name": "Stream into grid",
+      "summary": "Cells stream into the spreadsheet with per-cell generation status rendered in place.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/tabular/TabularCell.tsx"
+    },
+    {
+      "id": "step:generate-review-cells:persist-cells",
+      "type": "step",
+      "name": "Persist cells",
+      "summary": "Generated contents persist to tabular_cells keyed by document and column index, carrying citations and status.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "step:generate-review-cells:refine-columns-and-rerun",
+      "type": "step",
+      "name": "Refine columns and rerun",
+      "summary": "Column CRUD and the edit-column menu let reviewers refine extraction questions and regenerate.",
+      "tags": [
+        "iteration"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/TREditColumnMenu.tsx"
+    },
+    {
+      "id": "flow:tabular-review-chat",
+      "type": "flow",
+      "name": "Chat Over a Review",
+      "summary": "A citation-aware chat sits beside the grid: the review renders as a markdown table for context, responses stream with citations mapped back to review documents, and sessions persist with auto-generated titles.",
+      "tags": [
+        "chat",
+        "citations"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Review chat endpoints (SSE) on the tabular router",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:tabular-review-chat:open-chat-panel",
+      "type": "step",
+      "name": "Open chat panel",
+      "summary": "TRChatPanel is a resizable side panel streaming SSE responses with drip-rendered text, reasoning and doc-read blocks, and inline citations.",
+      "tags": [
+        "ui"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/tabular/TRChatPanel.tsx"
+    },
+    {
+      "id": "step:tabular-review-chat:render-grid-context",
+      "type": "step",
+      "name": "Render grid context",
+      "summary": "buildTabularContext renders the review grid — columns, rows, cell summaries — as a markdown table for chat context.",
+      "tags": [
+        "context"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:tabular-review-chat:compose-review-messages",
+      "type": "step",
+      "name": "Compose review messages",
+      "summary": "buildTabularMessages builds the review-chat LLM messages including the column/row map of the grid.",
+      "tags": [
+        "messages"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:tabular-review-chat:map-citations-to-documents",
+      "type": "step",
+      "name": "Map citations to documents",
+      "summary": "extractTabularAnnotations converts parsed citations into annotation records mapped to review documents.",
+      "tags": [
+        "citations"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "step:tabular-review-chat:persist-review-chat",
+      "type": "step",
+      "name": "Persist review chat",
+      "summary": "Sessions and messages persist to tabular_review_chats and tabular_review_chat_messages with citation annotations.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "step:tabular-review-chat:auto-title-chat",
+      "type": "step",
+      "name": "Auto-title chat",
+      "summary": "generateChatTitle names the chat from the first user message using the cheap title model.",
+      "tags": [
+        "titles"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/tabular.ts"
+    },
+    {
+      "id": "flow:export-review-to-excel",
+      "type": "flow",
+      "name": "Export a Review to Excel",
+      "summary": "The finished grid leaves the app as a clean .xlsx: a document-by-column grid is built, citation and pill markup stripped, and an exceljs workbook downloaded in the browser.",
+      "tags": [
+        "export",
+        "excel"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Export action on the tabular review screen",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:export-review-to-excel:build-export-grid",
+      "type": "step",
+      "name": "Build export grid",
+      "summary": "The exporter builds a document-by-column grid from the review contents.",
+      "tags": [
+        "grid"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/exportToExcel.ts"
+    },
+    {
+      "id": "step:export-review-to-excel:strip-markup",
+      "type": "step",
+      "name": "Strip markup",
+      "summary": "Citation and pill markup is stripped from cell text for clean spreadsheet values.",
+      "tags": [
+        "cleanup"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/exportToExcel.ts"
+    },
+    {
+      "id": "step:export-review-to-excel:write-workbook",
+      "type": "step",
+      "name": "Write workbook",
+      "summary": "exceljs writes the .xlsx workbook and the filename is sanitized.",
+      "tags": [
+        "xlsx"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/exportToExcel.ts"
+    },
+    {
+      "id": "step:export-review-to-excel:download-blob",
+      "type": "step",
+      "name": "Download blob",
+      "summary": "The browser triggers a blob download of the finished workbook.",
+      "tags": [
+        "download"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/exportToExcel.ts"
+    },
+    {
+      "id": "domain:workflow-library",
+      "type": "domain",
+      "name": "Workflow Template Library",
+      "summary": "Reusable legal expertise as prompts: chat- and tabular-typed workflow templates with practice areas, built-in firm templates, email-based sharing with edit permissions, and launch points that drop a workflow into an assistant chat or spawn a whole tabular review.",
+      "tags": [
+        "workflows",
+        "templates",
+        "prompts",
+        "sharing",
+        "knowledge-management"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entities": [
+          "workflows",
+          "workflow_shares",
+          "hidden_workflows",
+          "built-in templates",
+          "practice areas"
+        ],
+        "businessRules": [
+          "System (built-in) workflows cannot be edited",
+          "Sharing is granted by email with an optional edit-permission flag",
+          "Users can hide system or shared workflows without deleting them",
+          "A workflow is typed as chat or tabular, carrying a markdown prompt or a column config"
+        ],
+        "crossDomainInteractions": [
+          "Chat workflows inject reusable prompts into assistant runs via the workflow tools",
+          "Tabular workflows seed the column configuration of new reviews"
+        ]
+      }
+    },
+    {
+      "id": "flow:author-workflow-templates",
+      "type": "flow",
+      "name": "Author Workflow Templates",
+      "summary": "Users browse the library of built-in and custom workflows, create or edit templates with a type, practice area, and prompt or column content, with system templates protected from edits.",
+      "tags": [
+        "authoring",
+        "library"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "Workflows library page driving the workflows router CRUD",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:author-workflow-templates:browse-library",
+      "type": "step",
+      "name": "Browse library",
+      "summary": "WorkflowList shows built-in and user workflows with search, practice filtering, hide/unhide, and edit/delete actions.",
+      "tags": [
+        "library"
+      ],
+      "complexity": "moderate",
+      "filePath": "frontend/src/app/components/workflows/WorkflowList.tsx"
+    },
+    {
+      "id": "step:author-workflow-templates:create-or-edit",
+      "type": "step",
+      "name": "Create or edit",
+      "summary": "NewWorkflowModal toggles assistant/tabular type, practice-area selection with a custom option, and prompt or column content.",
+      "tags": [
+        "modal"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/workflows/NewWorkflowModal.tsx"
+    },
+    {
+      "id": "step:author-workflow-templates:edit-prompt-and-columns",
+      "type": "step",
+      "name": "Edit prompt and columns",
+      "summary": "The prompt editor and column modals refine the template body and column configuration.",
+      "tags": [
+        "editing"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/workflows/WorkflowPromptEditor.tsx"
+    },
+    {
+      "id": "step:author-workflow-templates:persist-template",
+      "type": "step",
+      "name": "Persist template",
+      "summary": "The workflows table stores the markdown prompt, column config, practice area, and a system-template flag.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "step:author-workflow-templates:guard-system-templates",
+      "type": "step",
+      "name": "Guard system templates",
+      "summary": "handleWorkflowUpdate applies validated updates for owners or edit-permitted sharers, refusing system workflows.",
+      "tags": [
+        "guard"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/workflows.ts"
+    },
+    {
+      "id": "step:author-workflow-templates:hide-or-unhide",
+      "type": "step",
+      "name": "Hide or unhide",
+      "summary": "hidden_workflows records per-user hiding of system or shared workflows; built-in legal templates ship with the backend (BUILTIN_WORKFLOWS).",
+      "tags": [
+        "visibility"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/builtinWorkflows.ts"
+    },
+    {
+      "id": "flow:share-workflow-templates",
+      "type": "flow",
+      "name": "Share Workflow Templates",
+      "summary": "Templates spread across a firm by email grants: shares carry an optional edit permission, access resolves per request, and sharer display names are surfaced to recipients.",
+      "tags": [
+        "sharing",
+        "permissions"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Share workflow modal driving the workflow share endpoints",
+        "entryType": "http"
+      }
+    },
+    {
+      "id": "step:share-workflow-templates:enter-collaborator-emails",
+      "type": "step",
+      "name": "Enter collaborator emails",
+      "summary": "ShareWorkflowModal collects recipient emails for the share grant.",
+      "tags": [
+        "modal"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/workflows/ShareWorkflowModal.tsx"
+    },
+    {
+      "id": "step:share-workflow-templates:record-share-grant",
+      "type": "step",
+      "name": "Record share grant",
+      "summary": "workflow_shares stores the email-based grant with an optional edit-permission flag.",
+      "tags": [
+        "persistence"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/schema.sql"
+    },
+    {
+      "id": "step:share-workflow-templates:resolve-access-on-request",
+      "type": "step",
+      "name": "Resolve access on request",
+      "summary": "resolveWorkflowAccess determines ownership or share-based access and edit rights, decorating rows via withWorkflowAccess.",
+      "tags": [
+        "access-control"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/workflows.ts"
+    },
+    {
+      "id": "step:share-workflow-templates:show-sharer-names",
+      "type": "step",
+      "name": "Show sharer names",
+      "summary": "loadSharerNames resolves sharer display names from user_profiles, falling back to auth admin email lookups.",
+      "tags": [
+        "display"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/routes/workflows.ts"
+    },
+    {
+      "id": "step:share-workflow-templates:list-shared-workflows",
+      "type": "step",
+      "name": "List shared workflows",
+      "summary": "Shared templates appear in the recipient’s library alongside their own and the built-ins.",
+      "tags": [
+        "library"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/workflows/WorkflowList.tsx"
+    },
+    {
+      "id": "flow:launch-workflow",
+      "type": "flow",
+      "name": "Launch a Workflow",
+      "summary": "A workflow becomes work: pickers in the chat input and review-creation modal let users select a template, whose prompt drives the assistant turn or whose columns seed a new tabular review.",
+      "tags": [
+        "launch",
+        "reuse"
+      ],
+      "complexity": "simple",
+      "domainMeta": {
+        "entryPoint": "Workflow pickers in the chat input and review-creation modal",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:launch-workflow:pick-workflow",
+      "type": "step",
+      "name": "Pick workflow",
+      "summary": "AssistantWorkflowModal merges built-ins with custom workflows fetched from the API, with search filtering and a preview pane.",
+      "tags": [
+        "picker"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/assistant/AssistantWorkflowModal.tsx"
+    },
+    {
+      "id": "step:launch-workflow:load-workflow-store",
+      "type": "step",
+      "name": "Load workflow store",
+      "summary": "buildWorkflowStore loads owned and shared workflow prompts into the store backing the chat workflow tools.",
+      "tags": [
+        "store"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:launch-workflow:run-in-chat",
+      "type": "step",
+      "name": "Run in chat",
+      "summary": "A chat workflow’s prompt drives the assistant turn through the workflow tools (WORKFLOW_TOOLS).",
+      "tags": [
+        "chat"
+      ],
+      "complexity": "simple",
+      "filePath": "backend/src/lib/chatTools.ts"
+    },
+    {
+      "id": "step:launch-workflow:seed-tabular-review",
+      "type": "step",
+      "name": "Seed tabular review",
+      "summary": "A tabular workflow selected at review creation seeds the new review’s column configuration.",
+      "tags": [
+        "tabular"
+      ],
+      "complexity": "simple",
+      "filePath": "frontend/src/app/components/tabular/AddNewTRModal.tsx"
+    }
+  ],
+  "edges": [
+    {
+      "source": "domain:identity-and-access",
+      "target": "flow:sign-up-and-sign-in",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:sign-up-and-sign-in",
+      "target": "step:sign-up-and-sign-in:submit-signup",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:sign-up-and-sign-in",
+      "target": "step:sign-up-and-sign-in:sign-in",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:sign-up-and-sign-in",
+      "target": "step:sign-up-and-sign-in:bootstrap-profile-row",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:sign-up-and-sign-in",
+      "target": "step:sign-up-and-sign-in:track-session",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:sign-up-and-sign-in",
+      "target": "step:sign-up-and-sign-in:load-profile-context",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "flow:authorize-api-requests",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:authorize-api-requests",
+      "target": "step:authorize-api-requests:attach-bearer-token",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:authorize-api-requests",
+      "target": "step:authorize-api-requests:validate-token",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:authorize-api-requests",
+      "target": "step:authorize-api-requests:check-resource-access",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:authorize-api-requests",
+      "target": "step:authorize-api-requests:filter-accessible-sets",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:authorize-api-requests",
+      "target": "step:authorize-api-requests:guard-owner-only-actions",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "flow:manage-model-keys-and-settings",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:enter-provider-keys",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:validate-payload",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:encrypt-and-store-key",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:report-key-status",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:resolve-effective-models",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:manage-model-keys-and-settings",
+      "target": "step:manage-model-keys-and-settings:gate-model-picker",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "flow:track-message-credits",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:track-message-credits",
+      "target": "step:track-message-credits:roll-credit-window",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.25
+    },
+    {
+      "source": "flow:track-message-credits",
+      "target": "step:track-message-credits:enforce-before-streaming",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:track-message-credits",
+      "target": "step:track-message-credits:show-usage",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.75
+    },
+    {
+      "source": "flow:track-message-credits",
+      "target": "step:track-message-credits:block-when-exhausted",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:matters-and-documents",
+      "target": "flow:create-and-share-matter",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:create-and-share-matter",
+      "target": "step:create-and-share-matter:open-create-modal",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:create-and-share-matter",
+      "target": "step:create-and-share-matter:submit-new-project",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:create-and-share-matter",
+      "target": "step:create-and-share-matter:persist-project",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:create-and-share-matter",
+      "target": "step:create-and-share-matter:share-by-email",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:create-and-share-matter",
+      "target": "step:create-and-share-matter:apply-sharing-rules",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:matters-and-documents",
+      "target": "flow:organize-matter-documents",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:organize-matter-documents",
+      "target": "step:organize-matter-documents:browse-folder-tree",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:organize-matter-documents",
+      "target": "step:organize-matter-documents:manage-subfolders",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:organize-matter-documents",
+      "target": "step:organize-matter-documents:batch-upload-documents",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:organize-matter-documents",
+      "target": "step:organize-matter-documents:move-documents",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:organize-matter-documents",
+      "target": "step:organize-matter-documents:pick-documents-anywhere",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:matters-and-documents",
+      "target": "flow:ingest-and-process-document",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:accept-upload",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:convert-docx-to-pdf",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:extract-structure",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:store-in-r2",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:record-document-rows",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:ingest-and-process-document",
+      "target": "step:ingest-and-process-document:track-processing-status",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:matters-and-documents",
+      "target": "flow:manage-document-versions",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:manage-document-versions",
+      "target": "step:manage-document-versions:list-version-history",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:manage-document-versions",
+      "target": "step:manage-document-versions:upload-new-version",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:manage-document-versions",
+      "target": "step:manage-document-versions:restore-prior-version",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:manage-document-versions",
+      "target": "step:manage-document-versions:resolve-active-version",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:manage-document-versions",
+      "target": "step:manage-document-versions:badge-latest-edits",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:matters-and-documents",
+      "target": "flow:preview-and-download-document",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:preview-and-download-document",
+      "target": "step:preview-and-download-document:issue-signed-preview",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:preview-and-download-document",
+      "target": "step:preview-and-download-document:render-pdf-preview",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:preview-and-download-document",
+      "target": "step:preview-and-download-document:sign-download-token",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:preview-and-download-document",
+      "target": "step:preview-and-download-document:verify-token-publicly",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:preview-and-download-document",
+      "target": "step:preview-and-download-document:stream-with-safe-headers",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "flow:stream-assistant-turn",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:compose-message",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.14
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:validate-request",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.29
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:enforce-credits-and-models",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.43
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:build-document-context",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.57
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:run-tool-loop",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.71
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:drip-render-stream",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.86
+    },
+    {
+      "source": "flow:stream-assistant-turn",
+      "target": "step:stream-assistant-turn:persist-transcript",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "flow:execute-document-tools",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:dispatch-tool-call",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:resolve-doc-labels",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:read-document",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:find-in-document",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:run-feature-extras",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:execute-document-tools",
+      "target": "step:execute-document-tools:return-results-to-model",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "flow:project-scoped-chat",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:project-scoped-chat",
+      "target": "step:project-scoped-chat:open-project-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:project-scoped-chat",
+      "target": "step:project-scoped-chat:validate-project-access",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:project-scoped-chat",
+      "target": "step:project-scoped-chat:build-project-context",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:project-scoped-chat",
+      "target": "step:project-scoped-chat:stream-with-project-tools",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:project-scoped-chat",
+      "target": "step:project-scoped-chat:persist-project-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "flow:route-model-to-provider",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:route-model-to-provider",
+      "target": "step:route-model-to-provider:pick-model",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:route-model-to-provider",
+      "target": "step:route-model-to-provider:resolve-catalog-entry",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:route-model-to-provider",
+      "target": "step:route-model-to-provider:dispatch-to-adapter",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:route-model-to-provider",
+      "target": "step:route-model-to-provider:convert-tool-schemas",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:route-model-to-provider",
+      "target": "step:route-model-to-provider:drive-provider-stream",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "flow:ground-answers-in-citations",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:ground-answers-in-citations",
+      "target": "step:ground-answers-in-citations:buffer-citation-block",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:ground-answers-in-citations",
+      "target": "step:ground-answers-in-citations:parse-citations",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:ground-answers-in-citations",
+      "target": "step:ground-answers-in-citations:persist-annotations",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:ground-answers-in-citations",
+      "target": "step:ground-answers-in-citations:show-citation-panel",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:ground-answers-in-citations",
+      "target": "step:ground-answers-in-citations:jump-to-source",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:drafting-and-redlining",
+      "target": "flow:generate-legal-document",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:generate-legal-document",
+      "target": "step:generate-legal-document:invoke-generate-tool",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:generate-legal-document",
+      "target": "step:generate-legal-document:build-styled-docx",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:generate-legal-document",
+      "target": "step:generate-legal-document:upload-generated-file",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:generate-legal-document",
+      "target": "step:generate-legal-document:record-document-and-version",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:generate-legal-document",
+      "target": "step:generate-legal-document:preview-in-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:drafting-and-redlining",
+      "target": "flow:propose-tracked-edits",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:invoke-edit-tool",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:load-current-bytes",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:anchor-each-edit",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:rewrite-runs-as-tracked-changes",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:save-edit-version",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:propose-tracked-edits",
+      "target": "step:propose-tracked-edits:show-edit-cards",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:drafting-and-redlining",
+      "target": "flow:resolve-tracked-edits",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:choose-accept-or-reject",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:optimistic-dom-update",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:resolve-in-ooxml",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:refresh-version-and-pdf",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:update-edit-status",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:resolve-tracked-edits",
+      "target": "step:resolve-tracked-edits:sync-chat-annotations",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "flow:create-tabular-review",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:create-tabular-review",
+      "target": "step:create-tabular-review:configure-review",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:create-tabular-review",
+      "target": "step:create-tabular-review:select-documents",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:create-tabular-review",
+      "target": "step:create-tabular-review:define-columns",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:create-tabular-review",
+      "target": "step:create-tabular-review:persist-review",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:create-tabular-review",
+      "target": "step:create-tabular-review:open-review-grid",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "flow:generate-review-cells",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:extract-document-text",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:query-single-cell",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:stream-whole-row",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:stream-into-grid",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:persist-cells",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:generate-review-cells",
+      "target": "step:generate-review-cells:refine-columns-and-rerun",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "flow:tabular-review-chat",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:open-chat-panel",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:render-grid-context",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:compose-review-messages",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:map-citations-to-documents",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:persist-review-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:tabular-review-chat",
+      "target": "step:tabular-review-chat:auto-title-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "flow:export-review-to-excel",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:export-review-to-excel",
+      "target": "step:export-review-to-excel:build-export-grid",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.25
+    },
+    {
+      "source": "flow:export-review-to-excel",
+      "target": "step:export-review-to-excel:strip-markup",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:export-review-to-excel",
+      "target": "step:export-review-to-excel:write-workbook",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.75
+    },
+    {
+      "source": "flow:export-review-to-excel",
+      "target": "step:export-review-to-excel:download-blob",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:workflow-library",
+      "target": "flow:author-workflow-templates",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:browse-library",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.17
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:create-or-edit",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.33
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:edit-prompt-and-columns",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:persist-template",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.67
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:guard-system-templates",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.83
+    },
+    {
+      "source": "flow:author-workflow-templates",
+      "target": "step:author-workflow-templates:hide-or-unhide",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:workflow-library",
+      "target": "flow:share-workflow-templates",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:share-workflow-templates",
+      "target": "step:share-workflow-templates:enter-collaborator-emails",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:share-workflow-templates",
+      "target": "step:share-workflow-templates:record-share-grant",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:share-workflow-templates",
+      "target": "step:share-workflow-templates:resolve-access-on-request",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:share-workflow-templates",
+      "target": "step:share-workflow-templates:show-sharer-names",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:share-workflow-templates",
+      "target": "step:share-workflow-templates:list-shared-workflows",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:workflow-library",
+      "target": "flow:launch-workflow",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:launch-workflow",
+      "target": "step:launch-workflow:pick-workflow",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.25
+    },
+    {
+      "source": "flow:launch-workflow",
+      "target": "step:launch-workflow:load-workflow-store",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "flow:launch-workflow",
+      "target": "step:launch-workflow:run-in-chat",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.75
+    },
+    {
+      "source": "flow:launch-workflow",
+      "target": "step:launch-workflow:seed-tabular-review",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "domain:matters-and-documents",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "requireAuth and the ownership/shared_with email rules gate every project and document operation.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "domain:assistant-chat",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Message credits are enforced before each streaming turn, and bring-your-own API keys determine which models are selectable.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "domain:tabular-review",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Review access resolves via ownership, the review share list, or the parent project’s sharing rules.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:identity-and-access",
+      "target": "domain:workflow-library",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Workflow access combines ownership with email share grants and per-share edit permissions.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "domain:matters-and-documents",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Chat tools read document text from stored versions; project chat builds its context from every ready matter document.",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:assistant-chat",
+      "target": "domain:drafting-and-redlining",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "The generate_document and edit_document tool calls invoke the drafting and tracked-change engines.",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:drafting-and-redlining",
+      "target": "domain:matters-and-documents",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Generated drafts and tracked-edit results are uploaded to R2 and recorded as new document versions.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "domain:matters-and-documents",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Reviews select matter or standalone documents and extract text from their stored bytes.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:tabular-review",
+      "target": "domain:assistant-chat",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Cell generation and review chat reuse the multi-provider LLM layer and the citation machinery.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:workflow-library",
+      "target": "domain:assistant-chat",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Chat workflows inject reusable prompts into assistant runs via the workflow tools.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:workflow-library",
+      "target": "domain:tabular-review",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Tabular workflow templates seed the column configuration of new reviews.",
+      "weight": 0.6
+    }
+  ],
+  "layers": [],
+  "tour": []
+}
